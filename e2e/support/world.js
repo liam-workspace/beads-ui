@@ -83,3 +83,13 @@ export async function openIssue(page, id, flavour = 'bdw') {
 export function hubCallsFor(flavour) {
   return hubCalls(worldFor(flavour));
 }
+
+/**
+ * The tile of one file, found by its name.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {string} name
+ */
+export function tile(page, name) {
+  return page.getByTestId('attachment-tile').filter({ hasText: name });
+}
