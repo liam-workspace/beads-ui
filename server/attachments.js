@@ -143,7 +143,12 @@ export function contentHeaders(row) {
   const non_ascii = /[\u0080-￿]/.test(raw_name);
   let disposition = `${image ? 'inline' : 'attachment'}; filename="${safe_name}"`;
   if (non_ascii) {
-    disposition += `; filename*=UTF-8''${encodeURIComponent(raw_name)}`;
+    // encodeURIComponent keeps ' ( ) *, which RFC 8187 attr-char does not allow
+    const encoded = encodeURIComponent(raw_name).replace(
+      /['()*]/g,
+      (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase()
+    );
+    disposition += `; filename*=UTF-8''${encoded}`;
   }
   return {
     'Content-Type': image ? row.mime : 'application/octet-stream',
@@ -201,7 +206,8 @@ export function attachmentRoute(getRoot) {
       } catch {
         return refuse(res);
       } finally {
-        await handle?.close();
+        // A failing close must not replace the answer already sent
+        await handle?.close().catch(() => {});
       }
       res.status(200).set(contentHeaders(row)).end(bytes);
     } catch {

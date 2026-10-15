@@ -223,6 +223,13 @@ describe('contentHeaders', () => {
       expect(/^[\x20-\x7e]*$/.test(v)).toBe(true);
     }
   });
+
+  test('S14: filename* percent-encodes every byte outside RFC 8187 attr-char', () => {
+    const h = contentHeaders(row({ path: "attachments/x/é'()*!.png" }));
+    expect(h['Content-Disposition']).toContain(
+      "filename*=UTF-8''%C3%A9%27%28%29%2A!.png"
+    );
+  });
 });
 
 describe('attachmentRoute', () => {
@@ -265,11 +272,12 @@ describe('attachmentRoute', () => {
    * @param {string} [id]
    */
   async function call(getRoot, file, id = 'bui-a1') {
-    /** @type {{ status: number, body: unknown, headers: Record<string, string> }} */
-    const out = { status: 0, body: undefined, headers: {} };
+    /** @type {{ status: number, body: unknown, headers: Record<string, string>, sets: number, ends: number }} */
+    const out = { status: 0, body: undefined, headers: {}, sets: 0, ends: 0 };
     const res = {
       status(/** @type {number} */ n) {
         out.status = n;
+        out.sets += 1;
         return res;
       },
       set(
@@ -280,6 +288,7 @@ describe('attachmentRoute', () => {
         return res;
       },
       end(/** @type {unknown} */ b) {
+        out.ends += 1;
         out.body = b;
       }
     };
@@ -309,6 +318,26 @@ describe('attachmentRoute', () => {
     listRows(['attachments/dir.png', 'attachments/link-dir.png']);
     for (const f of ['attachments/dir.png', 'attachments/link-dir.png']) {
       expect((await call(() => root, f)).status).toBe(404);
+    }
+  });
+
+  test('EX4: a failing close after a refusal still sends exactly one 404', async () => {
+    listRows(['attachments/a.png']);
+    const spy = vi.spyOn(fs.promises, 'open').mockResolvedValue(
+      /** @type {any} */ ({
+        stat: async () => ({ isFile: () => false }),
+        close: async () => {
+          throw new Error('EIO');
+        }
+      })
+    );
+    try {
+      const out = await call(() => root, 'attachments/a.png');
+      expect(out.status).toBe(404);
+      expect(out.ends).toBe(1);
+      expect(out.sets).toBe(1);
+    } finally {
+      spy.mockRestore();
     }
   });
 
