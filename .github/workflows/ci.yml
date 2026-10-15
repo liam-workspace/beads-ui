@@ -18,21 +18,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          cache: 'pnpm'
       - name: Install
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+      - name: Audit
+        run: pnpm audit --audit-level high
+      - name: Audit signatures
+        run: pnpm audit signatures
       - name: Lint
         if: matrix.node-version == '24.x'
-        run: npm run lint
+        run: pnpm run lint
       - name: Types
         if: matrix.node-version == '24.x'
-        run: npm run tsc
+        run: pnpm run tsc
       - name: Prettier
         if: matrix.node-version == '24.x'
-        run: npm run prettier:check
+        run: pnpm run prettier:check
       - name: Test
-        run: npm test
+        run: pnpm test
+      - name: Build
+        run: pnpm run build

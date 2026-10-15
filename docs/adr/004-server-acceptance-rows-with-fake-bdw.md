@@ -29,7 +29,7 @@ does not apply.
   its answers from a per-world `state.json` and records every call so a row can
   assert what the server asked for.
 - Each row carries a stable ID in its title (`A-01`, `F-01`, …) so one row runs
-  with `npx vitest run <file> -t "<row id>"`.
+  with `pnpm exec vitest run <file> -t "<row id>"`.
 - Rows are written before the feature is built and stay red until it lands; once
   the contract is fixed they are changed only to follow a recorded decision.
 
@@ -37,7 +37,7 @@ does not apply.
 
 - Server behaviour is proven through the same interfaces the browser uses, with
   the real argument handling and process spawning.
-- The rows run in the normal `npm test` suite; they need no database, network
+- The rows run in the normal `pnpm test` suite; they need no database, network
   service or hub.
 - The fake binary is shared with the Playwright E2E harness (ADR 003), so the
   two levels agree on what `bd` / `bdw` returns.

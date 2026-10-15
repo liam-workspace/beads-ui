@@ -38,15 +38,15 @@ a running Beads server.
   no `E2E_MODE` switch.
 - The launcher refuses to start while `app/main.bundle.js` exists, because the
   server would serve the stale bundle instead of the current source.
-- Run with `npx playwright test`; a targeted run passes the spec files touched
-  since the base commit.
+- Run with `pnpm exec playwright test`; a targeted run passes the spec files
+  touched since the base commit.
 
 ## Consequences
 
 - Dialogs, keyboard handling, image loading and downloads are proven in a real
   browser instead of being approximated in jsdom.
 - Contributors need the Chromium build Playwright installs
-  (`npx playwright install chromium`).
+  (`pnpm exec playwright install chromium`).
 - E2E runs never touch a real Beads database or the hub.
 - The fake binary is the single description of what the server may ask `bd` /
   `bdw`; a new server call needs a matching answer in the fixture.

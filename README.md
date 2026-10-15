@@ -67,10 +67,10 @@ These can also be set via CLI options: `bdui start --host 0.0.0.0 --port 8080`
 
 ## Developer Workflow
 
-- 🔨 Clone the repo and run `npm install`.
-- 🚀 Start the dev server with `npm start`.
-- 🔗 Alternatively, use `npm link` to link the package globally and run
-  `bdui start` from any project.
+- 🔨 Clone the repo and run `pnpm install`.
+- 🚀 Start the dev server with `pnpm start`.
+- 🔗 Alternatively, use `pnpm link --global` to link the package globally and
+  run `bdui start` from any project.
 
 ## Debug Logging
 

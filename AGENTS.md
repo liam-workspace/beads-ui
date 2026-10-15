@@ -108,7 +108,7 @@ Never update `CHANGES.md`.
 
 ## Pre‑Handoff Validation
 
-- Run type checks: `npm run tsc`
-- Run tests: `npm test`
-- Run eslint: `npm run lint`
-- Run prettier: `npm run prettier:write`
+- Run type checks: `pnpm run tsc`
+- Run tests: `pnpm test`
+- Run eslint: `pnpm run lint`
+- Run prettier: `pnpm run prettier:write`

@@ -6,3 +6,4 @@ CHANGES.md
 app/main.bundle.js
 app/main.bundle.js.map
 dev-docs
+pnpm-lock.yaml

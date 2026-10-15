@@ -11,6 +11,7 @@
   "homepage": "https://github.com/mantoni/beads-ui",
   "author": "Maximilian Antoni <mail@maxantoni.de>",
   "type": "module",
+  "packageManager": "pnpm@12.5.1",
   "bin": {
     "bdui": "bin/bdui.js"
   },
@@ -18,7 +19,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "all": "npm run lint && npm run tsc && npm test && npm run prettier:check",
+    "all": "pnpm run lint && pnpm run tsc && pnpm test && pnpm run prettier:check",
     "start": "node server/index.js --debug",
     "build": "node scripts/build-frontend.js",
     "test": "vitest run",
@@ -27,10 +28,10 @@
     "lint": "eslint --ext .js .",
     "prettier:write": "prettier --write .",
     "prettier:check": "prettier --check .",
-    "preversion": "npm run all",
+    "preversion": "pnpm run all",
     "version": "changes --commits --footer",
-    "postversion": "git push --follow-tags && npm publish",
-    "prepack": "npm run build",
+    "postversion": "git push --follow-tags && pnpm publish",
+    "prepack": "pnpm run build",
     "postpack": "rm app/main.bundle.js app/main.bundle.js.map"
   },
   "dependencies": {
