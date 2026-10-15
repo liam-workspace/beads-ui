@@ -3,6 +3,7 @@ import { bootstrap } from './main.js';
 import { createWsClient } from './ws.js';
 
 // Mock WS client before importing the app
+/** @type {Array<{ type: string, payload: unknown }>} */
 const calls = [];
 const issues = [
   { id: 'UI-1', title: 'One', status: 'open', priority: 1 },
@@ -78,5 +79,27 @@ describe('deep link on initial load (UI-44)', () => {
 
     // The list renders asynchronously from push-only stores; dialog is open
     // and shows the correct id, which is sufficient for deep-link behavior.
+  });
+
+  test('BR-BUI-001-6: a deep link lists attachments once, however often the state changes', async () => {
+    calls.length = 0;
+    window.location.hash = '#/issues?issue=UI-2';
+    document.body.innerHTML = '<main id="app"></main>';
+    const root = /** @type {HTMLElement} */ (document.getElementById('app'));
+    const client = /** @type {any} */ (createWsClient());
+    bootstrap(root);
+    await Promise.resolve();
+    client._trigger('snapshot', {
+      type: 'snapshot',
+      id: 'tab:issues',
+      revision: 1,
+      issues
+    });
+    // Other state changes while the issue stays open
+    window.location.hash = '#/board?issue=UI-2';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await new Promise((r) => setTimeout(r, 20));
+    const listings = calls.filter((c) => c.type === 'list-attachments');
+    expect(listings).toHaveLength(1);
   });
 });

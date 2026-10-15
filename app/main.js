@@ -583,10 +583,18 @@ export function bootstrap(root_element) {
 
     // If router already set a selected id (deep-link), open dialog now
     const initial_id = store.getState().selected_id;
+    /**
+     * The issue the detail view last loaded; any other state change while it
+     * stays open must not read its comments and attachments again.
+     *
+     * @type {string | null}
+     */
+    let loaded_detail_id = null;
     if (initial_id) {
       detail_mount.hidden = false;
       dialog.open(initial_id);
       if (detail) {
+        loaded_detail_id = initial_id;
         void detail.load(initial_id);
       }
       // Ensure detail subscription is active on initial deep-link
@@ -612,7 +620,8 @@ export function bootstrap(root_element) {
       if (id) {
         detail_mount.hidden = false;
         dialog.open(id);
-        if (detail) {
+        if (detail && id !== loaded_detail_id) {
+          loaded_detail_id = id;
           void detail.load(id);
         }
         // Wire per-issue subscription for detail
@@ -645,6 +654,7 @@ export function bootstrap(root_element) {
           // ignore
         }
         if (detail) {
+          loaded_detail_id = null;
           detail.clear();
         }
         detail_mount.hidden = true;
