@@ -483,16 +483,19 @@ export function createDetailView(
    * issue is dropped (BR-BUI-001-6).
    *
    * @param {string} id
+   * @param {boolean} [keep_rows] - Keep a ready gallery on screen while the listing refreshes.
    */
-  async function loadAttachments(id) {
+  async function loadAttachments(id, keep_rows = false) {
     const generation = ++attachments_generation;
-    attachments_state = {
-      status: 'loading',
-      rows: [],
-      message: '',
-      failed: new Set()
-    };
-    doRender();
+    if (!(keep_rows && attachments_state.status === 'ready')) {
+      attachments_state = {
+        status: 'loading',
+        rows: [],
+        message: '',
+        failed: new Set()
+      };
+      doRender();
+    }
     /** @type {import('./attachments.js').AttachmentsState} */
     let next;
     try {
@@ -584,7 +587,7 @@ export function createDetailView(
         doRender();
         void ensureCommentsLoaded(current_id);
         if (changed) {
-          void loadAttachments(current_id);
+          void loadAttachments(current_id, true);
         }
       } catch (err) {
         log('issue stores listener error %o', err);

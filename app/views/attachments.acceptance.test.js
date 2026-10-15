@@ -282,4 +282,29 @@ describe('attachments in the detail view', () => {
       );
     expect(path()).toContain('login.png');
   });
+
+  test('BR-BUI-001-6: a refresh keeps the gallery on screen, and a reply after clear is dropped', async () => {
+    /** @type {Array<(rows: unknown) => void>} */
+    const resolvers = [];
+    let n = 0;
+    const { mount, view, stores } = setup(() => {
+      n++;
+      if (n === 1) return [row(`${DIR}/login.png`)];
+      return new Promise((resolve) => {
+        resolvers.push(resolve);
+      });
+    });
+    await view.load('bui-a1');
+    await flush();
+    stores.issues['bui-a1'] = { ...stores.issues['bui-a1'], updated_at: 2 };
+    stores.push('bui-a1');
+    await flush();
+    expect(
+      mount.querySelectorAll('[data-testid="attachment-tile"]')
+    ).toHaveLength(1);
+    view.clear();
+    resolvers[0]([row(`${DIR}/a.png`), row(`${DIR}/b.png`)]);
+    await flush();
+    expect(mount.querySelector('[data-testid="attachment-tile"]')).toBeNull();
+  });
 });

@@ -142,10 +142,11 @@ test.describe('BUI-001 Screenshot gallery', () => {
     await expect(
       page.getByText('Could not list attachments: database locked')
     ).toBeVisible();
+    const calls_before = hubCallsFor('bdw').length;
     givenState('bdw', 'three-files');
     await page.getByRole('button', { name: 'Retry' }).click();
     await expect(page.getByTestId('attachment-tile')).toHaveCount(3);
-    expect(hubCallsFor('bdw')).toHaveLength(2);
+    expect(hubCallsFor('bdw')).toHaveLength(calls_before + 1);
   });
 
   test('A workspace without bdw shows why there is no gallery', async ({
