@@ -11,6 +11,8 @@ export default defineConfig([
       'coverage',
       'dist',
       '.beads',
+      'playwright-report',
+      'test-results',
       'app/main.bundle.js',
       'app/main.bundle.js.map'
     ]
