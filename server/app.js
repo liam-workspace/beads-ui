@@ -4,10 +4,12 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { attachmentRoute } from './attachments.js';
 import {
   getAvailableWorkspaces,
   registerWorkspace
 } from './registry-watcher.js';
+import { getCurrentWorkspace } from './workspace.js';
 
 /**
  * Create and configure the Express application.
@@ -101,6 +103,12 @@ export function createApp(config) {
       }
     });
   }
+
+  // Evidence files: the listing gates every request, so mount before static
+  app.get(
+    '/api/attachments/:id',
+    attachmentRoute(() => getCurrentWorkspace()?.root_dir ?? config.root_dir)
+  );
 
   // Static assets from /app
   app.use(express.static(config.app_dir));

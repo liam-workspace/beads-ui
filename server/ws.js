@@ -12,6 +12,7 @@ import {
   makeError,
   makeOk
 } from '../app/protocol.js';
+import { isValidIssueId, listIssueAttachments } from './attachments.js';
 import { getGitUserName, runBd, runBdJson } from './bd.js';
 import { resolveWorkspaceDatabase } from './db.js';
 import { fetchListForSubscription } from './list-adapters.js';
@@ -19,6 +20,7 @@ import { debug } from './logging.js';
 import { getAvailableWorkspaces } from './registry-watcher.js';
 import { keyOf, registry } from './subscriptions.js';
 import { validateSubscribeListPayload } from './validators.js';
+import { getCurrentWorkspace, setCurrentWorkspace } from './workspace.js';
 
 const log = debug('ws');
 
@@ -213,13 +215,6 @@ const SUBS = new WeakMap();
 let CURRENT_WSS = null;
 
 /**
- * Current workspace configuration.
- *
- * @type {{ root_dir: string, db_path: string } | null}
- */
-let CURRENT_WORKSPACE = null;
-
-/**
  * Reference to the database watcher for rebinding on workspace change.
  *
  * @type {{ rebind: (opts?: { root_dir?: string }) => void, path: string } | null}
@@ -241,8 +236,8 @@ function clearDetailCaches() {
  * @param {string} issue_id
  */
 function issueDetailCacheKey(issue_id) {
-  const root_dir = CURRENT_WORKSPACE?.root_dir || '';
-  const db_path = CURRENT_WORKSPACE?.db_path || '';
+  const root_dir = getCurrentWorkspace()?.root_dir || '';
+  const db_path = getCurrentWorkspace()?.db_path || '';
   return `${root_dir}\0${db_path}\0${issue_id}`;
 }
 
@@ -288,7 +283,7 @@ async function fetchCachedIssueDetail(spec) {
   const issue_id = String(spec.params?.id || '').trim();
   if (issue_id.length === 0) {
     return fetchListForSubscription(spec, {
-      cwd: CURRENT_WORKSPACE?.root_dir
+      cwd: getCurrentWorkspace()?.root_dir
     });
   }
   const cached = ISSUE_DETAIL_CACHE.get(issueDetailCacheKey(issue_id));
@@ -297,7 +292,7 @@ async function fetchCachedIssueDetail(spec) {
   }
   const generation = DETAIL_CACHE_GENERATION;
   const result = await fetchListForSubscription(spec, {
-    cwd: CURRENT_WORKSPACE?.root_dir
+    cwd: getCurrentWorkspace()?.root_dir
   });
   if (result.ok) {
     populateIssueDetailCache(spec, result.items, generation);
@@ -314,7 +309,7 @@ function fetchInitialListForSubscription(spec) {
     return fetchCachedIssueDetail(spec);
   }
   return fetchListForSubscription(spec, {
-    cwd: CURRENT_WORKSPACE?.root_dir
+    cwd: getCurrentWorkspace()?.root_dir
   });
 }
 
@@ -456,7 +451,7 @@ async function refreshAndPublish(spec) {
     const is_detail = String(spec.type) === 'issue-detail';
     const detail_cache_generation = DETAIL_CACHE_GENERATION;
     const res = await fetchListForSubscription(spec, {
-      cwd: CURRENT_WORKSPACE?.root_dir,
+      cwd: getCurrentWorkspace()?.root_dir,
       priority: is_detail ? 'interactive' : 'background'
     });
     if (!res.ok) {
@@ -550,10 +545,10 @@ export function attachWsServer(http_server, options = {}) {
   // Initialize workspace state
   const initial_root = options.root_dir || process.cwd();
   const initial_db = resolveWorkspaceDatabase({ cwd: initial_root });
-  CURRENT_WORKSPACE = {
+  setCurrentWorkspace({
     root_dir: initial_root,
     db_path: initial_db.path
-  };
+  });
   clearDetailCaches();
 
   if (options.watcher) {
@@ -645,12 +640,12 @@ export function attachWsServer(http_server, options = {}) {
   function setWorkspace(new_root_dir) {
     const resolved_root = path.resolve(new_root_dir);
     const new_db = resolveWorkspaceDatabase({ cwd: resolved_root });
-    const old_path = CURRENT_WORKSPACE?.db_path || '';
+    const old_path = getCurrentWorkspace()?.db_path || '';
 
-    CURRENT_WORKSPACE = {
+    const workspace = setCurrentWorkspace({
       root_dir: resolved_root,
       db_path: new_db.path
-    };
+    });
 
     const changed = new_db.path !== old_path;
 
@@ -667,13 +662,13 @@ export function attachWsServer(http_server, options = {}) {
       clearDetailCaches();
 
       // Broadcast workspace-changed event to all clients
-      broadcast('workspace-changed', CURRENT_WORKSPACE);
+      broadcast('workspace-changed', workspace);
 
       // Schedule refresh of all active list subscriptions
       scheduleListRefresh();
     }
 
-    return { changed, workspace: CURRENT_WORKSPACE };
+    return { changed, workspace };
   }
 
   return {
@@ -725,7 +720,7 @@ export async function handleMessage(ws, data) {
   // Without this, runBd/runBdJson fall back to process.cwd() and bd reports
   // "no beads database found" for any workspace selected via set-workspace.
   // See mantoni/beads-ui#87.
-  const bd_options = { cwd: CURRENT_WORKSPACE?.root_dir };
+  const bd_options = { cwd: getCurrentWorkspace()?.root_dir };
 
   // Dispatch known types here as we implement them. For now, only a ping utility.
   if (req.type === /** @type {MessageType} */ ('ping')) {
@@ -1383,6 +1378,26 @@ export async function handleMessage(ws, data) {
     return;
   }
 
+  // list-attachments: payload { id: string }; never cached (BR-BUI-001-6)
+  if (req.type === 'list-attachments') {
+    const { id } = /** @type {any} */ (req.payload || {});
+    if (!isValidIssueId(id)) {
+      ws.send(
+        JSON.stringify(
+          makeError(req, 'bad_request', 'payload requires { id: string }')
+        )
+      );
+      return;
+    }
+    const listed = await listIssueAttachments(id, { cwd: bd_options.cwd });
+    if (!listed.ok) {
+      ws.send(JSON.stringify(makeError(req, listed.code, listed.message)));
+      return;
+    }
+    ws.send(JSON.stringify(makeOk(req, listed.rows)));
+    return;
+  }
+
   // add-comment: payload { id: string, text: string }
   if (req.type === 'add-comment') {
     const { id, text } = /** @type {any} */ (req.payload || {});
@@ -1482,7 +1497,7 @@ export async function handleMessage(ws, data) {
       JSON.stringify(
         makeOk(req, {
           workspaces,
-          current: CURRENT_WORKSPACE
+          current: getCurrentWorkspace()
         })
       )
     );
@@ -1492,7 +1507,7 @@ export async function handleMessage(ws, data) {
   // get-workspace: returns the current workspace
   if (req.type === 'get-workspace') {
     log('get-workspace');
-    ws.send(JSON.stringify(makeOk(req, CURRENT_WORKSPACE)));
+    ws.send(JSON.stringify(makeOk(req, getCurrentWorkspace())));
     return;
   }
 
@@ -1518,12 +1533,12 @@ export async function handleMessage(ws, data) {
 
     // Update workspace (this will rebind watcher, clear registry, broadcast change)
     const new_db = resolveWorkspaceDatabase({ cwd: resolved });
-    const old_path = CURRENT_WORKSPACE?.db_path || '';
+    const old_path = getCurrentWorkspace()?.db_path || '';
 
-    CURRENT_WORKSPACE = {
+    const workspace = setCurrentWorkspace({
       root_dir: resolved,
       db_path: new_db.path
-    };
+    });
 
     const changed = new_db.path !== old_path;
 
@@ -1551,7 +1566,7 @@ export async function handleMessage(ws, data) {
       JSON.stringify(
         makeOk(req, {
           changed,
-          workspace: CURRENT_WORKSPACE
+          workspace
         })
       )
     );
