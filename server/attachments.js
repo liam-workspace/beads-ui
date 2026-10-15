@@ -1,6 +1,8 @@
 /**
  * @import { AttachmentRow } from '../app/protocol.js'
+ * @import { Request, RequestHandler, Response } from 'express'
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import { getBdBin, runBdJson } from './bd.js';
 
@@ -82,4 +84,128 @@ export function isImageMime(mime) {
     mime === 'image/gif' ||
     mime === 'image/webp'
   );
+}
+
+/**
+ * The row the file route may serve: the exact listed path, not missing.
+ *
+ * @param {AttachmentRow[]} rows
+ * @param {string} file
+ * @returns {AttachmentRow | null}
+ */
+export function findServableRow(rows, file) {
+  return rows.find((row) => row.path === file && !row.missing) ?? null;
+}
+
+/**
+ * Resolve `rel` under `root` and return its real path only when it lies inside
+ * the real path of `root`. Symlinks and `..` that leave the root give null.
+ *
+ * @param {string} root
+ * @param {string} rel
+ * @returns {Promise<string | null>}
+ */
+export async function resolveInside(root, rel) {
+  try {
+    const real_root = await fs.promises.realpath(root);
+    const real = await fs.promises.realpath(path.resolve(real_root, rel));
+    const relative = path.relative(real_root, real);
+    if (
+      relative === '' ||
+      relative === '..' ||
+      relative.startsWith('..' + path.sep) ||
+      path.isAbsolute(relative)
+    ) {
+      return null;
+    }
+    return real;
+  } catch (err) {
+    const code = /** @type {NodeJS.ErrnoException} */ (err).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Response headers for one served file (BR-BUI-001-3): images inline with their
+ * own type, everything else a download. Values stay ASCII.
+ *
+ * @param {AttachmentRow} row
+ * @returns {Record<string, string>}
+ */
+export function contentHeaders(row) {
+  const image = isImageMime(row.mime);
+  const raw_name = row.path.split('/').pop() ?? '';
+  // Printable ASCII only, without quote or backslash; everything else is `_`.
+  const safe_name = raw_name.replace(/["\\]|[^ -~]/g, '_');
+  const non_ascii = /[\u0080-￿]/.test(raw_name);
+  let disposition = `${image ? 'inline' : 'attachment'}; filename="${safe_name}"`;
+  if (non_ascii) {
+    disposition += `; filename*=UTF-8''${encodeURIComponent(raw_name)}`;
+  }
+  return {
+    'Content-Type': image ? row.mime : 'application/octet-stream',
+    'Content-Disposition': disposition,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store'
+  };
+}
+
+/**
+ * @param {Response} res
+ */
+function refuse(res) {
+  res.status(404).set('Cache-Control', 'no-store').end();
+}
+
+/**
+ * Express handler for `GET /api/attachments/:id?path=`. Every refusal is one
+ * empty 404; no error escapes as a 500.
+ *
+ * @param {() => string} getRoot - The current workspace root, read per request.
+ * @returns {RequestHandler}
+ */
+export function attachmentRoute(getRoot) {
+  return async (/** @type {Request} */ req, /** @type {Response} */ res) => {
+    try {
+      const id = req.params.id;
+      const file = req.query.path;
+      if (!isValidIssueId(id) || typeof file !== 'string' || file === '') {
+        return refuse(res);
+      }
+      const root = getRoot();
+      const listed = await listIssueAttachments(id, { cwd: root });
+      if (!listed.ok) {
+        return refuse(res);
+      }
+      const row = findServableRow(listed.rows, file);
+      if (!row) {
+        return refuse(res);
+      }
+      const real = await resolveInside(root, row.path);
+      if (!real) {
+        return refuse(res);
+      }
+      /** @type {Buffer} */
+      let bytes;
+      /** @type {fs.promises.FileHandle | null} */
+      let handle = null;
+      try {
+        handle = await fs.promises.open(real, 'r');
+        if (!(await handle.stat()).isFile()) {
+          return refuse(res);
+        }
+        bytes = await handle.readFile();
+      } catch {
+        return refuse(res);
+      } finally {
+        await handle?.close();
+      }
+      res.status(200).set(contentHeaders(row)).end(bytes);
+    } catch {
+      refuse(res);
+    }
+  };
 }

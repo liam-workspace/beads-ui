@@ -1,10 +1,23 @@
-import { describe, expect, test } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import {
+  attachmentRoute,
   classifyListingFailure,
+  contentHeaders,
+  findServableRow,
   isBdwBinary,
   isImageMime,
-  isValidIssueId
+  isValidIssueId,
+  resolveInside
 } from './attachments.js';
+import { runBdJson } from './bd.js';
+
+vi.mock('./bd.js', () => ({
+  getBdBin: () => '/hub/.claude/bin/bdw',
+  runBdJson: vi.fn()
+}));
 
 describe('isValidIssueId', () => {
   test('BR-BUI-001-3: accepts ids that cannot be read as a flag or a path', () => {
@@ -71,5 +84,246 @@ describe('isImageMime', () => {
     ]) {
       expect(isImageMime(bad)).toBe(false);
     }
+  });
+});
+
+/**
+ * @param {Partial<import('../app/protocol.js').AttachmentRow>} over
+ * @returns {import('../app/protocol.js').AttachmentRow}
+ */
+function row(over) {
+  return {
+    path: 'attachments/x/a.png',
+    abs_path: '/w/attachments/x/a.png',
+    bytes: 1,
+    mime: 'image/png',
+    source: 'fix-folder',
+    missing: false,
+    ...over
+  };
+}
+
+describe('findServableRow', () => {
+  const rows = [
+    row({ path: 'attachments/x/a.png' }),
+    row({ path: 'attachments/x/gone.png', missing: true, bytes: null })
+  ];
+
+  test('S6: matches the exact path of a present row', () => {
+    expect(findServableRow(rows, 'attachments/x/a.png')).toBe(rows[0]);
+  });
+
+  test('BR-BUI-001-5: a missing row is not servable', () => {
+    expect(findServableRow(rows, 'attachments/x/gone.png')).toBeNull();
+  });
+
+  test('S6: no normalisation, so variants of a listed path do not match', () => {
+    expect(findServableRow(rows, './attachments/x/a.png')).toBeNull();
+    expect(findServableRow(rows, 'attachments//x/a.png')).toBeNull();
+    expect(findServableRow(rows, 'attachments/x/../x/a.png')).toBeNull();
+  });
+});
+
+describe('resolveInside', () => {
+  /** @type {string} */
+  let base;
+  /** @type {string} */
+  let root;
+
+  beforeAll(() => {
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bdui-in-')));
+    root = path.join(base, 'ws');
+    fs.mkdirSync(path.join(root, 'attachments'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'attachments', 'a.png'), 'a');
+    fs.writeFileSync(path.join(base, 'outside.txt'), 'x');
+    fs.symlinkSync(
+      path.join(base, 'outside.txt'),
+      path.join(root, 'attachments', 'out.txt')
+    );
+    fs.symlinkSync(
+      path.join(root, 'attachments', 'a.png'),
+      path.join(root, 'attachments', 'in.png')
+    );
+  });
+
+  afterAll(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  test('S7: a file inside the workspace resolves to its real path', async () => {
+    expect(await resolveInside(root, 'attachments/a.png')).toBe(
+      path.join(root, 'attachments', 'a.png')
+    );
+  });
+
+  test('S7: a ../ path to a file outside is refused', async () => {
+    expect(await resolveInside(root, '../outside.txt')).toBeNull();
+  });
+
+  test('S7: a symlink that leaves the workspace is refused', async () => {
+    expect(await resolveInside(root, 'attachments/out.txt')).toBeNull();
+  });
+
+  test('S7: a symlink that stays inside resolves to its target', async () => {
+    expect(await resolveInside(root, 'attachments/in.png')).toBe(
+      path.join(root, 'attachments', 'a.png')
+    );
+  });
+
+  test('EX4: an absent file is null', async () => {
+    expect(await resolveInside(root, 'attachments/none.png')).toBeNull();
+  });
+
+  test('S7: the root itself is null', async () => {
+    expect(await resolveInside(root, '.')).toBeNull();
+  });
+
+  test('EX4: a path through a regular file (ENOTDIR) is null', async () => {
+    expect(await resolveInside(root, 'attachments/a.png/x')).toBeNull();
+  });
+});
+
+describe('contentHeaders', () => {
+  test('S5: a png is shown inline with its own type', () => {
+    expect(contentHeaders(row({ path: 'attachments/x/login.png' }))).toEqual({
+      'Content-Type': 'image/png',
+      'Content-Disposition': 'inline; filename="login.png"',
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-store'
+    });
+  });
+
+  test('BR-BUI-001-3: svg is a download, never inline', () => {
+    const h = contentHeaders(
+      row({ path: 'attachments/x/d.svg', mime: 'image/svg+xml' })
+    );
+    expect(h['Content-Type']).toBe('application/octet-stream');
+    expect(h['Content-Disposition']).toBe('attachment; filename="d.svg"');
+  });
+
+  test('S13: a log is a download', () => {
+    const h = contentHeaders(
+      row({ path: 'attachments/x/trace.log', mime: 'text/plain' })
+    );
+    expect(h['Content-Type']).toBe('application/octet-stream');
+    expect(h['Content-Disposition']).toBe('attachment; filename="trace.log"');
+  });
+
+  test('BR-BUI-001-3: quotes, backslashes and control characters cannot break the header', () => {
+    const h = contentHeaders(row({ path: 'attachments/x/a"b\\c\nd.png' }));
+    expect(h['Content-Disposition']).toBe('inline; filename="a_b_c_d.png"');
+  });
+
+  test('S14: a non-ASCII name adds filename* and keeps ASCII values', () => {
+    const h = contentHeaders(row({ path: 'attachments/x/é.png' }));
+    expect(h['Content-Disposition']).toBe(
+      'inline; filename="_.png"; filename*=UTF-8\'\'%C3%A9.png'
+    );
+    for (const v of Object.values(h)) {
+      expect(/^[\x20-\x7e]*$/.test(v)).toBe(true);
+    }
+  });
+});
+
+describe('attachmentRoute', () => {
+  /** @type {string} */
+  let base;
+  /** @type {string} */
+  let root;
+  const mockedList = /** @type {import('vitest').Mock} */ (runBdJson);
+
+  beforeAll(() => {
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bdui-rt-')));
+    root = path.join(base, 'ws');
+    fs.mkdirSync(path.join(root, 'attachments', 'dir.png'), {
+      recursive: true
+    });
+    fs.writeFileSync(path.join(root, 'attachments', 'a.png'), 'png');
+    fs.symlinkSync(
+      path.join(root, 'attachments', 'dir.png'),
+      path.join(root, 'attachments', 'link-dir.png')
+    );
+  });
+
+  afterAll(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  /**
+   * @param {string[]} paths
+   */
+  function listRows(paths) {
+    mockedList.mockResolvedValue({
+      code: 0,
+      stdoutJson: paths.map((p) => row({ path: p }))
+    });
+  }
+
+  /**
+   * @param {() => string} getRoot
+   * @param {unknown} file
+   * @param {string} [id]
+   */
+  async function call(getRoot, file, id = 'bui-a1') {
+    /** @type {{ status: number, body: unknown, headers: Record<string, string> }} */
+    const out = { status: 0, body: undefined, headers: {} };
+    const res = {
+      status(/** @type {number} */ n) {
+        out.status = n;
+        return res;
+      },
+      set(
+        /** @type {string | Record<string, string>} */ h,
+        /** @type {string} */ v
+      ) {
+        Object.assign(out.headers, typeof h === 'string' ? { [h]: v } : h);
+        return res;
+      },
+      end(/** @type {unknown} */ b) {
+        out.body = b;
+      }
+    };
+    await attachmentRoute(getRoot)(
+      /** @type {any} */ ({ params: { id }, query: { path: file } }),
+      /** @type {any} */ (res),
+      () => {}
+    );
+    return out;
+  }
+
+  test('S2: a listed present file is served with its bytes', async () => {
+    listRows(['attachments/a.png']);
+    const out = await call(() => root, 'attachments/a.png');
+    expect(out.status).toBe(200);
+    expect(String(out.body)).toBe('png');
+  });
+
+  test('EX3: a repeated path parameter (array) is a 404, not a crash', async () => {
+    listRows(['attachments/a.png']);
+    const out = await call(() => root, ['attachments/a.png', 'x']);
+    expect(out.status).toBe(404);
+    expect(out.headers['Cache-Control']).toBe('no-store');
+  });
+
+  test('EX4: a listed folder, or a symlink to a folder, is a 404', async () => {
+    listRows(['attachments/dir.png', 'attachments/link-dir.png']);
+    for (const f of ['attachments/dir.png', 'attachments/link-dir.png']) {
+      expect((await call(() => root, f)).status).toBe(404);
+    }
+  });
+
+  test('BR-BUI-001-2: an invalid id never reaches bdw', async () => {
+    mockedList.mockClear();
+    const out = await call(() => root, 'attachments/a.png', '--help');
+    expect(out.status).toBe(404);
+    expect(mockedList).not.toHaveBeenCalled();
+  });
+
+  test('E3: the root is read per request, so a new workspace is honoured', async () => {
+    listRows(['attachments/a.png']);
+    let current = path.join(base, 'elsewhere');
+    expect((await call(() => current, 'attachments/a.png')).status).toBe(404);
+    current = root;
+    expect((await call(() => current, 'attachments/a.png')).status).toBe(200);
   });
 });
