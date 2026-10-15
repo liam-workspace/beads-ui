@@ -351,9 +351,9 @@ describe('views/detail', () => {
     await new Promise((r) => setTimeout(r, 10));
 
     // Verify sendFn was called correctly
-    expect(calls.length).toBe(1);
-    expect(calls[0].type).toBe('add-comment');
-    expect(calls[0].payload).toEqual({ id: 'UI-101', text: 'Test comment' });
+    const added = calls.filter((c) => c.type === 'add-comment');
+    expect(added.length).toBe(1);
+    expect(added[0].payload).toEqual({ id: 'UI-101', text: 'Test comment' });
   });
 
   test('fetches comments on load when not in snapshot', async () => {

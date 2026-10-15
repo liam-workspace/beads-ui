@@ -142,7 +142,9 @@ describe('detail view via subscription push', () => {
     });
     await tick();
 
-    expect(calls).toEqual([{ type: 'get-comments', payload: { id: 'UI-2' } }]);
+    expect(calls.filter((c) => c.type !== 'list-attachments')).toEqual([
+      { type: 'get-comments', payload: { id: 'UI-2' } }
+    ]);
     expect(mount.querySelectorAll('.comment-item').length).toBe(1);
     expect(mount.textContent).toContain('Fetched comment');
   });
@@ -202,7 +204,7 @@ describe('detail view via subscription push', () => {
     });
     await tick();
 
-    expect(calls).toEqual([]);
+    expect(calls.filter((c) => c.type !== 'list-attachments')).toEqual([]);
     expect(mount.textContent).toContain('No comments yet');
   });
 

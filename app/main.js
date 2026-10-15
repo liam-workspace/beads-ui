@@ -549,14 +549,14 @@ export function bootstrap(root_element) {
     });
 
     /**
-     * Load comments outside the global activity indicator so a slow comments
-     * request does not keep the entire application in a loading state.
+     * Load comments and attachments outside the global activity indicator so a
+     * slow request does not keep the entire application in a loading state.
      *
      * @param {string} type
      * @param {unknown} payload
      */
     const detail_transport = async (type, payload) => {
-      if (type === 'get-comments') {
+      if (type === 'get-comments' || type === 'list-attachments') {
         return client.send(/** @type {MessageType} */ (type), payload);
       }
       return transport(type, payload);
