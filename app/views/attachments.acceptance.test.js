@@ -178,6 +178,18 @@ describe('attachments in the detail view', () => {
     expect(listCalls()[2].payload).toEqual({ id: 'bui-a1' });
   });
 
+  test('BR-BUI-001-6: a second load of the same issue while its listing is in flight lists once', async () => {
+    const { view, listCalls } = setup(() => [row(`${DIR}/login.png`)]);
+    const first = view.load('bui-a1');
+    const second = view.load('bui-a1');
+    await Promise.all([first, second]);
+    await flush();
+    expect(listCalls()).toHaveLength(1);
+    await view.load('bui-a1');
+    await flush();
+    expect(listCalls()).toHaveLength(2);
+  });
+
   test('BR-BUI-001-6: a slow reply for the first issue is dropped after another load', async () => {
     /** @type {Array<(rows: unknown) => void>} */
     const resolvers = [];
