@@ -37,10 +37,14 @@ test.describe('BUI-001 Screenshot gallery', () => {
     await expect(page.getByTestId('attachment-viewer-path')).toContainText(
       'attachments/fix-bui-a1/login.png'
     );
-    const natural_width = await page
-      .getByTestId('attachment-viewer-image')
-      .evaluate((img) => /** @type {HTMLImageElement} */ (img).naturalWidth);
-    expect(natural_width).toBeGreaterThan(0);
+    // The image decodes after the viewer opens: wait for it, do not sample once
+    await expect
+      .poll(() =>
+        page
+          .getByTestId('attachment-viewer-image')
+          .evaluate((img) => /** @type {HTMLImageElement} */ (img).naturalWidth)
+      )
+      .toBeGreaterThan(0);
     await page.keyboard.press('Escape');
     await expect(viewer).toBeHidden();
     await expect(page.locator('#issue-dialog')).toHaveAttribute('open', '');
@@ -146,7 +150,9 @@ test.describe('BUI-001 Screenshot gallery', () => {
     givenState('bdw', 'three-files');
     await page.getByRole('button', { name: 'Retry' }).click();
     await expect(page.getByTestId('attachment-tile')).toHaveCount(3);
-    expect(hubCallsFor('bdw')).toHaveLength(calls_before + 1);
+    // Changing the fake's state also moves the issue's updated_at, which lists
+    // again by itself (BR-BUI-001-6), so Retry adds at least one listing
+    expect(hubCallsFor('bdw').length).toBeGreaterThan(calls_before);
   });
 
   test('A workspace without bdw shows why there is no gallery', async ({
