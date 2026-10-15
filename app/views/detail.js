@@ -1899,13 +1899,7 @@ export function createDetailView(
         renderPlaceholder('No issue selected');
         return;
       }
-      const next_id = String(id);
-      // The deep link opens the issue twice in the same tick; one listing in
-      // flight for this issue is enough (BR-BUI-001-6 asks for fresh reads, not
-      // duplicate ones).
-      const listing_in_flight =
-        next_id === current_id && attachments_state.status === 'loading';
-      current_id = next_id;
+      current_id = String(id);
       // Try from store first; show placeholder while waiting for snapshot
       current = null;
       refreshFromStore();
@@ -1923,9 +1917,7 @@ export function createDetailView(
       doRender();
 
       void ensureCommentsLoaded(current_id);
-      if (!listing_in_flight) {
-        void loadAttachments(current_id);
-      }
+      void loadAttachments(current_id);
     },
     clear() {
       current_id = null;
