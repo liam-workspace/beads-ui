@@ -13,6 +13,12 @@ import {
 } from '../utils/status.js';
 import { showToast } from '../utils/toast.js';
 import { createTypeBadge } from '../utils/type-badge.js';
+import { openViewer } from './attachment-viewer.js';
+import {
+  arrangeAttachments,
+  attachmentsTemplate,
+  viewerItems
+} from './attachments.js';
 
 /**
  * Format a date string for display.
@@ -158,6 +164,17 @@ export function createDetailView(
   const comments_loaded_counts = new Map();
   /** @type {Map<string, string>} */
   const comments_load_errors = new Map();
+  /** @type {import('./attachments.js').AttachmentsState} */
+  let attachments_state = {
+    status: 'loading',
+    rows: [],
+    message: '',
+    failed: new Set()
+  };
+  /** Bumped by every listing request and by `clear()`; older replies are dropped. */
+  let attachments_generation = 0;
+  /** @type {unknown} */
+  let attachments_updated_at = undefined;
 
   /** @type {HTMLDialogElement | null} */
   let delete_dialog = null;
@@ -461,6 +478,89 @@ export function createDetailView(
     void ensureCommentsLoaded(current_id);
   }
 
+  /**
+   * List the attachments of an issue. A reply for an older request or another
+   * issue is dropped (BR-BUI-001-6).
+   *
+   * @param {string} id
+   * @param {boolean} [keep_rows] - Keep a ready gallery on screen while the listing refreshes.
+   */
+  async function loadAttachments(id, keep_rows = false) {
+    const generation = ++attachments_generation;
+    if (!(keep_rows && attachments_state.status === 'ready')) {
+      attachments_state = {
+        status: 'loading',
+        rows: [],
+        message: '',
+        failed: new Set()
+      };
+      doRender();
+    }
+    /** @type {import('./attachments.js').AttachmentsState} */
+    let next;
+    try {
+      const reply = await sendFn('list-attachments', { id });
+      next = Array.isArray(reply)
+        ? {
+            status: 'ready',
+            rows: /** @type {import('../protocol.js').AttachmentRow[]} */ (
+              reply
+            ),
+            message: '',
+            failed: new Set()
+          }
+        : {
+            status: 'error',
+            rows: [],
+            message: 'unexpected reply',
+            failed: new Set()
+          };
+    } catch (err) {
+      const code =
+        err && typeof err === 'object'
+          ? /** @type {{ code?: unknown }} */ (err).code
+          : undefined;
+      const message =
+        err && typeof err === 'object'
+          ? /** @type {{ message?: unknown }} */ (err).message
+          : undefined;
+      next =
+        code === 'attachments_unavailable'
+          ? { status: 'unavailable', rows: [], message: '', failed: new Set() }
+          : {
+              status: 'error',
+              rows: [],
+              message:
+                typeof message === 'string' && message.length > 0
+                  ? message
+                  : 'Unable to list attachments',
+              failed: new Set()
+            };
+    }
+    if (generation !== attachments_generation || current_id !== id) {
+      return;
+    }
+    attachments_state = next;
+    doRender();
+  }
+
+  /** Retry the listing for the active issue. */
+  function onAttachmentsRetry() {
+    if (current_id) {
+      void loadAttachments(current_id);
+    }
+  }
+
+  /**
+   * An image answered an error (the file is gone): show the broken-file marker.
+   *
+   * @param {string} path
+   */
+  function onAttachmentImageError(path) {
+    attachments_state.failed.add(path);
+    doRender();
+  }
+
   // Live updates: re-render when issue stores change
   /** @type {(() => void) | null} */
   let unsubscribe_issue_stores = null;
@@ -475,8 +575,20 @@ export function createDetailView(
           return;
         }
         refreshFromStore();
+        const updated_at = current
+          ? /** @type {IssueDetail} */ (current).updated_at
+          : undefined;
+        // A first value after a load without an issue is not a change: the
+        // listing requested at load time is already newer than it.
+        const changed =
+          attachments_updated_at !== undefined &&
+          updated_at !== attachments_updated_at;
+        attachments_updated_at = updated_at;
         doRender();
         void ensureCommentsLoaded(current_id);
+        if (changed) {
+          void loadAttachments(current_id, true);
+        }
       } catch (err) {
         log('issue stores listener error %o', err);
       }
@@ -1481,12 +1593,34 @@ export function createDetailView(
       </div>
     </div>`;
 
+    const attachments_block = attachmentsTemplate(
+      attachments_state,
+      String(issue.id),
+      {
+        onRetry: onAttachmentsRetry,
+        onOpen: (index, opener) =>
+          openViewer({
+            items: viewerItems(
+              arrangeAttachments(
+                attachments_state.rows,
+                String(issue.id),
+                attachments_state.failed
+              ),
+              String(issue.id)
+            ),
+            index,
+            opener
+          }),
+        onImageError: onAttachmentImageError
+      }
+    );
+
     return html`
       <div class="panel__body" id="detail-root">
         <div class="detail-layout">
           <div class="detail-main">
             ${title_zone} ${desc_block} ${design_block} ${notes_block}
-            ${accept_block} ${comments_block}
+            ${accept_block} ${attachments_block} ${comments_block}
           </div>
           <div class="detail-side">
             <div class="props-card">
@@ -1777,13 +1911,18 @@ export function createDetailView(
       comment_text = '';
       comment_pending = false;
       comments_load_errors.delete(current_id);
+      attachments_updated_at = current
+        ? /** @type {IssueDetail} */ (current).updated_at
+        : undefined;
       doRender();
 
       void ensureCommentsLoaded(current_id);
+      void loadAttachments(current_id);
     },
     clear() {
       current_id = null;
       current = null;
+      attachments_generation++;
       comments_load_errors.clear();
       renderPlaceholder('Select an issue to view details');
     },

@@ -2,6 +2,8 @@
 tsconfig.tsbuildinfo
 app/main.bundle.js
 app/main.bundle.js.map
+playwright-report/
+test-results/
 .DS_Store
 .beads/issues.jsonl
 

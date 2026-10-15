@@ -20,6 +20,8 @@
     "server/**/*.js",
     "scripts/**/*.js",
     "test/**/*.js",
+    "e2e/**/*.js",
+    "playwright.config.js",
     "vitest.config.mjs"
   ],
   "exclude": ["app/main.bundle.js", "app/main.bundle.js.map"]

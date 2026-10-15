@@ -65,6 +65,12 @@ describe('server/protocol', () => {
     expect(res).toBe(true);
   });
 
+  test('list-attachments is a known message type', () => {
+    const res = isMessageType('list-attachments');
+
+    expect(res).toBe(true);
+  });
+
   test('isMessageType returns false for unknown type', () => {
     const res = isMessageType('not-a-type');
 

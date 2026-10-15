@@ -9,7 +9,20 @@
  * - Server can also send unsolicited events (e.g., subscription `snapshot`).
  */
 
-/** @typedef {'list-issues'|'update-status'|'edit-text'|'update-priority'|'update-type'|'create-issue'|'list-ready'|'dep-add'|'dep-remove'|'epic-status'|'update-assignee'|'label-add'|'label-remove'|'subscribe-list'|'unsubscribe-list'|'snapshot'|'upsert'|'delete'|'get-comments'|'add-comment'|'delete-issue'|'list-workspaces'|'set-workspace'|'get-workspace'|'workspace-changed'} MessageType */
+/** @typedef {'list-issues'|'update-status'|'edit-text'|'update-priority'|'update-type'|'create-issue'|'list-ready'|'dep-add'|'dep-remove'|'epic-status'|'update-assignee'|'label-add'|'label-remove'|'subscribe-list'|'unsubscribe-list'|'snapshot'|'upsert'|'delete'|'get-comments'|'add-comment'|'list-attachments'|'delete-issue'|'list-workspaces'|'set-workspace'|'get-workspace'|'workspace-changed'} MessageType */
+
+/**
+ * One evidence file of an issue, as `bdw hub attachments <id> --json` lists it
+ * and the `list-attachments` reply carries it unchanged.
+ *
+ * @typedef {Object} AttachmentRow
+ * @property {string} path - Path relative to the workspace root.
+ * @property {string} abs_path - Absolute path on the server's machine.
+ * @property {number | null} bytes - File size; null when missing.
+ * @property {string} mime - MIME type bdw derived from the file name.
+ * @property {'referenced' | 'fix-folder'} source - Why the file is listed.
+ * @property {boolean} missing - True when the mentioned file does not exist.
+ */
 
 /**
  * Every status `bd` can report on an issue.
@@ -115,6 +128,8 @@ export const MESSAGE_TYPES = /** @type {const} */ ([
   // Comments
   'get-comments',
   'add-comment',
+  // Attachments (bdw hub attachments)
+  'list-attachments',
   // Delete issue
   'delete-issue',
   // Workspace management
