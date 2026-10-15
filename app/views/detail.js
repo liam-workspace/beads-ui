@@ -13,7 +13,12 @@ import {
 } from '../utils/status.js';
 import { showToast } from '../utils/toast.js';
 import { createTypeBadge } from '../utils/type-badge.js';
-import { attachmentsTemplate } from './attachments.js';
+import { openViewer } from './attachment-viewer.js';
+import {
+  arrangeAttachments,
+  attachmentsTemplate,
+  viewerItems
+} from './attachments.js';
 
 /**
  * Format a date string for display.
@@ -1590,7 +1595,19 @@ export function createDetailView(
       String(issue.id),
       {
         onRetry: onAttachmentsRetry,
-        onOpen: () => {},
+        onOpen: (index, opener) =>
+          openViewer({
+            items: viewerItems(
+              arrangeAttachments(
+                attachments_state.rows,
+                String(issue.id),
+                attachments_state.failed
+              ),
+              String(issue.id)
+            ),
+            index,
+            opener
+          }),
         onImageError: onAttachmentImageError
       }
     );

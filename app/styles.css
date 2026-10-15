@@ -2160,6 +2160,39 @@ html[data-theme='dark'] {
   word-break: break-all;
 }
 
+.attachment-viewer {
+  padding: 12px;
+  color: var(--fg);
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.attachment-viewer::backdrop {
+  background: color-mix(in srgb, #000 45%, transparent);
+  backdrop-filter: blur(1px);
+}
+
+.attachment-viewer img {
+  display: block;
+  max-width: 90vw;
+  max-height: 80vh;
+  object-fit: contain;
+}
+
+.attachment-viewer__info {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.attachment-viewer__bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 /* Comments section */
 .comments {
   margin-top: 24px;

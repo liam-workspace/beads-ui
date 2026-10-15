@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { createDetailView } from './detail.js';
 
 const DIR = 'attachments/fix-bui-a1';
@@ -217,5 +217,69 @@ describe('attachments in the detail view', () => {
       tile?.querySelector('[data-testid="attachment-missing"]')
     ).toBeTruthy();
     expect(tile?.querySelector('img')).toBeNull();
+  });
+
+  test('S2: clicking an image tile opens the viewer; Escape closes only the viewer', async () => {
+    const { mount, view } = setup(() => [
+      row(`${DIR}/login.png`),
+      row(`${DIR}/trace.log`, { mime: 'text/plain' })
+    ]);
+    const parent = document.createElement('dialog');
+    parent.setAttribute('open', '');
+    document.body.append(parent);
+    parent.append(mount);
+    const parent_cancel = vi.fn();
+    parent.addEventListener('cancel', parent_cancel);
+    await view.load('bui-a1');
+    await flush();
+    const tile = /** @type {HTMLElement} */ (
+      mount.querySelector('[data-path$="login.png"] button')
+    );
+    tile.click();
+    const viewer = document.querySelector('[data-testid="attachment-viewer"]');
+    expect(viewer).toBeTruthy();
+    expect(
+      document.querySelector('[data-testid="attachment-viewer-path"]')
+        ?.textContent
+    ).toContain(`${DIR}/login.png`);
+    viewer?.dispatchEvent(
+      new Event('cancel', { bubbles: true, cancelable: true })
+    );
+    expect(
+      document.querySelector('[data-testid="attachment-viewer"]')
+    ).toBeNull();
+    expect(parent_cancel).not.toHaveBeenCalled();
+    expect(parent.hasAttribute('open')).toBe(true);
+    expect(document.activeElement).toBe(tile);
+  });
+
+  test('S3 / D-02: from Before, Next twice reaches the image tile', async () => {
+    const { mount, view } = setup(() => [
+      row(`${DIR}/login.png`),
+      row(`${DIR}/before.png`),
+      row(`${DIR}/after.png`)
+    ]);
+    await view.load('bui-a1');
+    await flush();
+    const first = /** @type {HTMLElement} */ (
+      mount.querySelector('.attachment-pair figure button')
+    );
+    first.click();
+    const path = () =>
+      document.querySelector('[data-testid="attachment-viewer-path"]')
+        ?.textContent ?? '';
+    expect(path()).toContain('before.png');
+    document
+      .querySelector('[data-testid="attachment-viewer"]')
+      ?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+      );
+    expect(path()).toContain('after.png');
+    document
+      .querySelector('[data-testid="attachment-viewer"]')
+      ?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+      );
+    expect(path()).toContain('login.png');
   });
 });
