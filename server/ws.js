@@ -12,6 +12,7 @@ import {
   makeError,
   makeOk
 } from '../app/protocol.js';
+import { isValidIssueId, listIssueAttachments } from './attachments.js';
 import { getGitUserName, runBd, runBdJson } from './bd.js';
 import { resolveWorkspaceDatabase } from './db.js';
 import { fetchListForSubscription } from './list-adapters.js';
@@ -1374,6 +1375,26 @@ export async function handleMessage(ws, data) {
       evictOldestCacheEntry(COMMENTS_CACHE, DETAIL_CACHE_LIMIT);
     }
     ws.send(JSON.stringify(makeOk(req, comments)));
+    return;
+  }
+
+  // list-attachments: payload { id: string }; never cached (BR-BUI-001-6)
+  if (req.type === 'list-attachments') {
+    const { id } = /** @type {any} */ (req.payload || {});
+    if (!isValidIssueId(id)) {
+      ws.send(
+        JSON.stringify(
+          makeError(req, 'bad_request', 'payload requires { id: string }')
+        )
+      );
+      return;
+    }
+    const listed = await listIssueAttachments(id, { cwd: bd_options.cwd });
+    if (!listed.ok) {
+      ws.send(JSON.stringify(makeError(req, listed.code, listed.message)));
+      return;
+    }
+    ws.send(JSON.stringify(makeOk(req, listed.rows)));
     return;
   }
 
