@@ -48,6 +48,9 @@ describe('detail view design section', () => {
       if (el.classList.contains('acceptance')) {
         return 'acceptance';
       }
+      if (el.classList.contains('attachments')) {
+        return 'attachments';
+      }
       if (el.classList.contains('comments')) {
         return 'comments';
       }
@@ -58,6 +61,7 @@ describe('detail view design section', () => {
       'design',
       'notes',
       'acceptance',
+      'attachments',
       'comments'
     ]);
     // Heading text for acceptance should be updated
